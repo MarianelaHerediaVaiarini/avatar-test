@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useFrame, useGraph, useLoader } from "@react-three/fiber";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useFrame, useGraph } from "@react-three/fiber";
 import { useAnimations, useFBX, useGLTF } from "@react-three/drei";
 import { SkeletonUtils } from "three-stdlib";
 import { useControls } from "leva";
@@ -61,25 +61,120 @@ export function Avatar(props) {
   // Audio: crea uno nuevo cuando cambia script
   const audio = useMemo(() => new Audio(`/audios/${script}.mp3`), [script]);
 
-  // JSON lipsync: OJO la ruta, debe empezar con /
-  const jsonText = useLoader(THREE.FileLoader, `/audios/${script}.json`);
-  const lipsync = useMemo(() => JSON.parse(jsonText), [jsonText]);
+  // JSON lipsync: fetch manual para NO disparar Suspense al cambiar script
+  const [lipsync, setLipsync] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/audios/${script}.json`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled) setLipsync(data);
+      });
+    return () => { cancelled = true; };
+  }, [script]);
 
   // Animaciones
   const { animations: standingGreetingAnimation } = useFBX("/animations/Standing Greeting.fbx");
   const { animations: idleAnimation } = useFBX("/animations/Idle.fbx");
+  const { animations: standingIdleAnimation } = useFBX("/animations/Standing Idle.fbx");
 
-  idleAnimation[0].name = "Idle";
-  standingGreetingAnimation[0].name = "StandingGreeting";
+  // Memoizar clips para estabilizar useAnimations
+  const allAnimations = useMemo(() => {
+    const idle = idleAnimation[0].clone();
+    const greet = standingGreetingAnimation[0].clone();
+    const standIdle = standingIdleAnimation[0].clone();
+    idle.name = "Idle";
+    greet.name = "StandingGreeting";
+    standIdle.name = "StandingIdle";
+    return [idle, greet, standIdle];
+  }, [idleAnimation, standingGreetingAnimation, standingIdleAnimation]);
 
-  const [animation, setAnimation] = useState("StandingGreeting");
-  const { actions } = useAnimations([...idleAnimation, ...standingGreetingAnimation], group);
+  const { actions } = useAnimations(allAnimations, group);
 
+  // ——— Sistema de transiciones naturales ———
+  // Crossfade suave: desvanece todas las demás y arranca la target
+  const crossFadeTo = useCallback((targetName, duration = 0.6) => {
+    if (!actions) return;
+    const target = actions[targetName];
+    if (!target) return;
+
+    Object.entries(actions).forEach(([name, action]) => {
+      if (name !== targetName && action.isRunning()) {
+        action.fadeOut(duration);
+      }
+    });
+
+    target.reset().setEffectiveWeight(1).fadeIn(duration).play();
+  }, [actions]);
+
+  // Ref para el timer de idle variations
+  const idleVariationTimerRef = useRef(null);
+  const greetingDoneRef = useRef(false);
+
+  // Programa la próxima variación de idle (StandingIdle de vez en cuando)
+  const scheduleIdleVariation = useCallback(() => {
+    // Intervalo aleatorio entre 6-12 segundos
+    const delay = 6000 + Math.random() * 6000;
+    idleVariationTimerRef.current = setTimeout(() => {
+      if (!actions?.StandingIdle) return;
+
+      // CrossFade a StandingIdle
+      crossFadeTo("StandingIdle", 0.8);
+
+      // Cuando termine StandingIdle, volver a Idle y programar la siguiente variación
+      const mixer = actions.StandingIdle.getMixer();
+      const onFinished = (e) => {
+        if (e.action === actions.StandingIdle) {
+          mixer.removeEventListener("finished", onFinished);
+          crossFadeTo("Idle", 0.8);
+          scheduleIdleVariation();
+        }
+      };
+      mixer.addEventListener("finished", onFinished);
+    }, delay);
+  }, [actions, crossFadeTo]);
+
+  // Setup y secuencia inicial: Idle → (3s) → Greeting → Idle → variaciones
   useEffect(() => {
-    if (!actions?.[animation]) return;
-    actions[animation].reset().fadeIn(0.3).play();
-    return () => actions[animation]?.fadeOut(0.3);
-  }, [actions, animation]);
+    if (!actions || Object.keys(actions).length === 0) return;
+
+    // Config de animaciones one-shot
+    if (actions.StandingGreeting) {
+      actions.StandingGreeting.clampWhenFinished = true;
+      actions.StandingGreeting.setLoop(THREE.LoopOnce, 1);
+    }
+    if (actions.StandingIdle) {
+      actions.StandingIdle.clampWhenFinished = true;
+      actions.StandingIdle.setLoop(THREE.LoopOnce, 1);
+    }
+
+    // Arrancar con Idle
+    actions.Idle?.reset().fadeIn(0.5).play();
+
+    // A los 3 segundos → Greeting
+    const greetTimer = setTimeout(() => {
+      crossFadeTo("StandingGreeting", 0.6);
+    }, 3000);
+
+    // Cuando Greeting termina → Idle + empezar variaciones
+    const mixer = actions.Idle?.getMixer();
+    const onGreetFinished = (e) => {
+      if (e.action === actions.StandingGreeting && !greetingDoneRef.current) {
+        greetingDoneRef.current = true;
+        mixer?.removeEventListener("finished", onGreetFinished);
+        crossFadeTo("Idle", 0.8);
+        // Empezar ciclo de variaciones naturales
+        scheduleIdleVariation();
+      }
+    };
+    mixer?.addEventListener("finished", onGreetFinished);
+
+    return () => {
+      clearTimeout(greetTimer);
+      clearTimeout(idleVariationTimerRef.current);
+      mixer?.removeEventListener("finished", onGreetFinished);
+    };
+  }, [actions, crossFadeTo, scheduleIdleVariation]);
 
   // Refs para performance
   const cueIndexRef = useRef(0);
@@ -169,7 +264,7 @@ export function Avatar(props) {
       <skinnedMesh geometry={nodes.Wolf3D_Body.geometry} material={materials.Wolf3D_Body} skeleton={nodes.Wolf3D_Body.skeleton} />
       <skinnedMesh geometry={nodes.Wolf3D_Outfit_Bottom.geometry} material={materials.Wolf3D_Outfit_Bottom} skeleton={nodes.Wolf3D_Outfit_Bottom.skeleton} />
       <skinnedMesh geometry={nodes.Wolf3D_Outfit_Footwear.geometry} material={materials.Wolf3D_Outfit_Footwear} skeleton={nodes.Wolf3D_Outfit_Footwear.skeleton} />
-      <skinnedMesh geometry={nodes.Wolf3D_Outfit_Top.geometry} material={materials.Wolf3D_Outfit_Top.skeleton ? nodes.Wolf3D_Outfit_Top.geometry : nodes.Wolf3D_Outfit_Top.geometry} material={materials.Wolf3D_Outfit_Top} skeleton={nodes.Wolf3D_Outfit_Top.skeleton} />
+      <skinnedMesh geometry={nodes.Wolf3D_Outfit_Top.geometry} material={materials.Wolf3D_Outfit_Top} skeleton={nodes.Wolf3D_Outfit_Top.skeleton} />
       <skinnedMesh name="EyeLeft" geometry={nodes.EyeLeft.geometry} material={materials.Wolf3D_Eye} skeleton={nodes.EyeLeft.skeleton} morphTargetDictionary={nodes.EyeLeft.morphTargetDictionary} morphTargetInfluences={nodes.EyeLeft.morphTargetInfluences} />
       <skinnedMesh name="EyeRight" geometry={nodes.EyeRight.geometry} material={materials.Wolf3D_Eye} skeleton={nodes.EyeRight.skeleton} morphTargetDictionary={nodes.EyeRight.morphTargetDictionary} morphTargetInfluences={nodes.EyeRight.morphTargetInfluences} />
       <skinnedMesh name="Wolf3D_Head" geometry={nodes.Wolf3D_Head.geometry} material={materials.Wolf3D_Skin} skeleton={nodes.Wolf3D_Head.skeleton} morphTargetDictionary={nodes.Wolf3D_Head.morphTargetDictionary} morphTargetInfluences={nodes.Wolf3D_Head.morphTargetInfluences} />
