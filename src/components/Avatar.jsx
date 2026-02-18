@@ -3,7 +3,6 @@ import { useFrame, useGraph } from "@react-three/fiber";
 import { useAnimations, useFBX, useGLTF } from "@react-three/drei";
 import { SkeletonUtils } from "three-stdlib";
 import { useControls } from "leva";
-import * as THREE from "three";
 
 const corresponding = {
   X: "viseme_sil",
@@ -13,11 +12,10 @@ const corresponding = {
   D: "viseme_O",
   E: "viseme_U",
   F: "viseme_FF",
-  G: "viseme_nn", // prueba nn primero; si no te gusta cambia a DD
+  G: "viseme_nn",
   H: "viseme_TH",
 };
 
-// Intensidad por visema (ajústalo a gusto)
 const strength = {
   viseme_sil: 0.0,
   viseme_PP: 0.9,
@@ -37,7 +35,6 @@ const strength = {
 };
 
 function expSmoothing(current, target, dt, k) {
-  // k mayor = más rápido
   const t = 1 - Math.exp(-k * dt);
   return current + (target - current) * t;
 }
@@ -49,7 +46,6 @@ export function Avatar(props) {
 
   const group = useRef();
 
-  // UI
   const { playAudio, script } = useControls({
     playAudio: false,
     script: {
@@ -58,10 +54,8 @@ export function Avatar(props) {
     },
   });
 
-  // Audio: crea uno nuevo cuando cambia script
   const audio = useMemo(() => new Audio(`/audios/${script}.mp3`), [script]);
 
-  // JSON lipsync: fetch manual para NO disparar Suspense al cambiar script
   const [lipsync, setLipsync] = useState(null);
   useEffect(() => {
     let cancelled = false;
@@ -73,12 +67,11 @@ export function Avatar(props) {
     return () => { cancelled = true; };
   }, [script]);
 
-  // Animaciones
   const { animations: standingGreetingAnimation } = useFBX("/animations/Standing Greeting.fbx");
   const { animations: idleAnimation } = useFBX("/animations/Idle.fbx");
   const { animations: standingIdleAnimation } = useFBX("/animations/Standing Idle.fbx");
 
-  // Memoizar clips para estabilizar useAnimations
+  // Memoize clips to keep useAnimations stable across renders
   const allAnimations = useMemo(() => {
     const idle = idleAnimation[0].clone();
     const greet = standingGreetingAnimation[0].clone();
@@ -91,42 +84,35 @@ export function Avatar(props) {
 
   const { actions } = useAnimations(allAnimations, group);
 
-  // ——— Blend suave entre Idle y StandingIdle ———
-  // Ambas animaciones corren siempre. Variamos los pesos con smoothing.
   const blendRef = useRef({
-    targetWeight: 0,     // 0 = 100% Idle, 1 = 100% StandingIdle
+    targetWeight: 0,
     currentWeight: 0,
-    nextChangeAt: 8 + Math.random() * 6, // primera variación entre 8-14s
+    nextChangeAt: 8 + Math.random() * 6,
   });
 
-  // Arranca ambas animaciones simultáneamente
+  // Both idle animations run simultaneously; blend weights control which is dominant
   useEffect(() => {
     if (!actions || Object.keys(actions).length === 0) return;
 
-    // Idle: loop normal, peso 1
     if (actions.Idle) {
       actions.Idle.reset().play();
       actions.Idle.setEffectiveWeight(1);
     }
 
-    // StandingIdle: loop, peso 0 (silenciada al inicio)
     if (actions.StandingIdle) {
       actions.StandingIdle.reset().play();
       actions.StandingIdle.setEffectiveWeight(0);
     }
   }, [actions]);
 
-  // Refs para performance
   const cueIndexRef = useRef(0);
   const currentVisemeRef = useRef("viseme_sil");
 
-  // Precalcula diccionarios/targets una sola vez
   const headDict = nodes?.Wolf3D_Head?.morphTargetDictionary;
   const headInfluences = nodes?.Wolf3D_Head?.morphTargetInfluences;
   const teethDict = nodes?.Wolf3D_Teeth?.morphTargetDictionary;
   const teethInfluences = nodes?.Wolf3D_Teeth?.morphTargetInfluences;
 
-  // ——— Parpadeo natural (morph target eyesClosed) ———
   const blinkRef = useRef({
     nextBlinkAt: 2 + Math.random() * 3,
     phase: "idle",
@@ -135,7 +121,6 @@ export function Avatar(props) {
     openDuration: 0.10,
   });
 
-  // Indices de morph target eyesClosed en cada mesh que lo tenga
   const eyesClosedIndices = useMemo(() => {
     const result = [];
     ["Wolf3D_Head", "EyeLeft", "EyeRight"].forEach((name) => {
@@ -152,7 +137,6 @@ export function Avatar(props) {
 
   const visemeNames = useMemo(() => Object.values(corresponding), []);
   const visemeIndices = useMemo(() => {
-    // devuelve map: visemeName -> { headIndex, teethIndex }
     const map = {};
     for (const v of visemeNames) {
       map[v] = {
@@ -163,9 +147,7 @@ export function Avatar(props) {
     return map;
   }, [headDict, teethDict, visemeNames]);
 
-  // Play / pause
   useEffect(() => {
-    // reset de estado cuando cambias script
     cueIndexRef.current = 0;
     currentVisemeRef.current = "viseme_sil";
     audio.currentTime = 0;
@@ -173,32 +155,23 @@ export function Avatar(props) {
     if (playAudio) audio.play();
     else audio.pause();
 
-    // cleanup para evitar que queden audios sonando
-    return () => {
-      audio.pause();
-    };
+    return () => { audio.pause(); };
   }, [playAudio, script, audio]);
 
-  // Lipsync + parpadeo + blend de idles
   useFrame((state, dt) => {
     const elapsed = state.clock.elapsedTime;
 
-    // ——— Blend suave entre Idle y StandingIdle ———
+    // Idle blend
     const blend = blendRef.current;
     if (elapsed >= blend.nextChangeAt) {
-      // Alternar: si estaba en Idle (0), ir a StandingIdle (1) y viceversa
       blend.targetWeight = blend.targetWeight < 0.5 ? 1 : 0;
-      // Próximo cambio entre 8-15 segundos
       blend.nextChangeAt = elapsed + 8 + Math.random() * 7;
     }
-
-    // Smoothing muy suave para que el blend sea imperceptible
     blend.currentWeight = expSmoothing(blend.currentWeight, blend.targetWeight, dt, 1.5);
-
     if (actions?.Idle) actions.Idle.setEffectiveWeight(1 - blend.currentWeight);
     if (actions?.StandingIdle) actions.StandingIdle.setEffectiveWeight(blend.currentWeight);
 
-    // ——— Parpadeo natural (escala Y de los ojos) ———
+    // Blink
     const blink = blinkRef.current;
     if (blink.phase === "idle" && elapsed >= blink.nextBlinkAt) {
       blink.phase = "closing";
@@ -226,23 +199,18 @@ export function Avatar(props) {
       }
     }
 
-    // Aplicar parpadeo via morph target eyesClosed
     for (const entry of eyesClosedIndices) {
       entry.influences[entry.index] = blink.progress;
     }
 
-    // ——— Lipsync ———
+    // Lipsync
     if (!headInfluences || !teethInfluences || !lipsync?.mouthCues?.length) return;
 
     const t = audio.currentTime;
-
-    // 1) Avanza el índice sin recorrer todo el array
     let i = cueIndexRef.current;
     const cues = lipsync.mouthCues;
 
-    // Si el usuario reinició el audio hacia atrás, resetea índice
     if (i > 0 && t < cues[i - 1].start) i = 0;
-
     while (i < cues.length - 1 && t > cues[i].end) i++;
     cueIndexRef.current = i;
 
@@ -251,9 +219,8 @@ export function Avatar(props) {
     const targetViseme = corresponding[rhubarbKey] ?? "viseme_sil";
     currentVisemeRef.current = targetViseme;
 
-    // 2) Calcula targets (solo 1 visema activo) y hace smoothing
-    const attack = 18;  // sube rápido
-    const release = 12; // baja un poco más lento
+    const attack = 18;
+    const release = 12;
 
     for (const v of visemeNames) {
       const target = v === targetViseme ? (strength[v] ?? 1) : 0;
