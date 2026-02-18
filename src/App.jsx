@@ -1,14 +1,21 @@
 import { Canvas } from "@react-three/fiber";
-import { Suspense } from "react";
-import { OrbitControls } from "@react-three/drei";
 import { Experience } from "./components/Experience";
-import { div } from "three/tsl";
 
 export default function App() {
   return (
-    
-      <Canvas shadows camera={{ position: [0, 1.1, 3.2], fov: 45 }}>
-        <Experience/>
+    <div
+      style={{
+        width: "100vw",
+        height: "100vh",
+        backgroundImage: "url(/textures/preventor.png)",
+        backgroundSize: "cover",
+        backgroundPosition: "top left",
+        backgroundRepeat: "no-repeat",
+      }}
+    >
+      <Canvas shadows camera={{ position: [0, 1.1, 3.2], fov: 45 }} style={{ background: "transparent" }}>
+        <Experience />
       </Canvas>
+    </div>
   );
 }
