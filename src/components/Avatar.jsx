@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useFrame, useGraph } from "@react-three/fiber";
 import { useAnimations, useFBX, useGLTF } from "@react-three/drei";
 import { SkeletonUtils } from "three-stdlib";
@@ -91,90 +91,30 @@ export function Avatar(props) {
 
   const { actions } = useAnimations(allAnimations, group);
 
-  // ——— Sistema de transiciones naturales ———
-  // Crossfade suave: desvanece todas las demás y arranca la target
-  const crossFadeTo = useCallback((targetName, duration = 0.6) => {
-    if (!actions) return;
-    const target = actions[targetName];
-    if (!target) return;
+  // ——— Blend suave entre Idle y StandingIdle ———
+  // Ambas animaciones corren siempre. Variamos los pesos con smoothing.
+  const blendRef = useRef({
+    targetWeight: 0,     // 0 = 100% Idle, 1 = 100% StandingIdle
+    currentWeight: 0,
+    nextChangeAt: 8 + Math.random() * 6, // primera variación entre 8-14s
+  });
 
-    Object.entries(actions).forEach(([name, action]) => {
-      if (name !== targetName && action.isRunning()) {
-        action.fadeOut(duration);
-      }
-    });
-
-    target.reset().setEffectiveWeight(1).fadeIn(duration).play();
-  }, [actions]);
-
-  // Ref para el timer de idle variations
-  const idleVariationTimerRef = useRef(null);
-  const greetingDoneRef = useRef(false);
-
-  // Programa la próxima variación de idle (StandingIdle de vez en cuando)
-  const scheduleIdleVariation = useCallback(() => {
-    // Intervalo aleatorio entre 6-12 segundos
-    const delay = 6000 + Math.random() * 6000;
-    idleVariationTimerRef.current = setTimeout(() => {
-      if (!actions?.StandingIdle) return;
-
-      // CrossFade a StandingIdle
-      crossFadeTo("StandingIdle", 0.8);
-
-      // Cuando termine StandingIdle, volver a Idle y programar la siguiente variación
-      const mixer = actions.StandingIdle.getMixer();
-      const onFinished = (e) => {
-        if (e.action === actions.StandingIdle) {
-          mixer.removeEventListener("finished", onFinished);
-          crossFadeTo("Idle", 0.8);
-          scheduleIdleVariation();
-        }
-      };
-      mixer.addEventListener("finished", onFinished);
-    }, delay);
-  }, [actions, crossFadeTo]);
-
-  // Setup y secuencia inicial: Idle → (3s) → Greeting → Idle → variaciones
+  // Arranca ambas animaciones simultáneamente
   useEffect(() => {
     if (!actions || Object.keys(actions).length === 0) return;
 
-    // Config de animaciones one-shot
-    if (actions.StandingGreeting) {
-      actions.StandingGreeting.clampWhenFinished = true;
-      actions.StandingGreeting.setLoop(THREE.LoopOnce, 1);
+    // Idle: loop normal, peso 1
+    if (actions.Idle) {
+      actions.Idle.reset().play();
+      actions.Idle.setEffectiveWeight(1);
     }
+
+    // StandingIdle: loop, peso 0 (silenciada al inicio)
     if (actions.StandingIdle) {
-      actions.StandingIdle.clampWhenFinished = true;
-      actions.StandingIdle.setLoop(THREE.LoopOnce, 1);
+      actions.StandingIdle.reset().play();
+      actions.StandingIdle.setEffectiveWeight(0);
     }
-
-    // Arrancar con Idle
-    actions.Idle?.reset().fadeIn(0.5).play();
-
-    // A los 3 segundos → Greeting
-    const greetTimer = setTimeout(() => {
-      crossFadeTo("StandingGreeting", 0.6);
-    }, 3000);
-
-    // Cuando Greeting termina → Idle + empezar variaciones
-    const mixer = actions.Idle?.getMixer();
-    const onGreetFinished = (e) => {
-      if (e.action === actions.StandingGreeting && !greetingDoneRef.current) {
-        greetingDoneRef.current = true;
-        mixer?.removeEventListener("finished", onGreetFinished);
-        crossFadeTo("Idle", 0.8);
-        // Empezar ciclo de variaciones naturales
-        scheduleIdleVariation();
-      }
-    };
-    mixer?.addEventListener("finished", onGreetFinished);
-
-    return () => {
-      clearTimeout(greetTimer);
-      clearTimeout(idleVariationTimerRef.current);
-      mixer?.removeEventListener("finished", onGreetFinished);
-    };
-  }, [actions, crossFadeTo, scheduleIdleVariation]);
+  }, [actions]);
 
   // Refs para performance
   const cueIndexRef = useRef(0);
@@ -185,6 +125,30 @@ export function Avatar(props) {
   const headInfluences = nodes?.Wolf3D_Head?.morphTargetInfluences;
   const teethDict = nodes?.Wolf3D_Teeth?.morphTargetDictionary;
   const teethInfluences = nodes?.Wolf3D_Teeth?.morphTargetInfluences;
+
+  // ——— Parpadeo natural (morph target eyesClosed) ———
+  const blinkRef = useRef({
+    nextBlinkAt: 2 + Math.random() * 3,
+    phase: "idle",
+    progress: 0,
+    closeDuration: 0.06,
+    openDuration: 0.10,
+  });
+
+  // Indices de morph target eyesClosed en cada mesh que lo tenga
+  const eyesClosedIndices = useMemo(() => {
+    const result = [];
+    ["Wolf3D_Head", "EyeLeft", "EyeRight"].forEach((name) => {
+      const mesh = nodes?.[name];
+      if (mesh?.morphTargetDictionary?.eyesClosed !== undefined) {
+        result.push({
+          influences: mesh.morphTargetInfluences,
+          index: mesh.morphTargetDictionary.eyesClosed,
+        });
+      }
+    });
+    return result;
+  }, [nodes]);
 
   const visemeNames = useMemo(() => Object.values(corresponding), []);
   const visemeIndices = useMemo(() => {
@@ -215,8 +179,59 @@ export function Avatar(props) {
     };
   }, [playAudio, script, audio]);
 
-  // Lipsync update
-  useFrame((_, dt) => {
+  // Lipsync + parpadeo + blend de idles
+  useFrame((state, dt) => {
+    const elapsed = state.clock.elapsedTime;
+
+    // ——— Blend suave entre Idle y StandingIdle ———
+    const blend = blendRef.current;
+    if (elapsed >= blend.nextChangeAt) {
+      // Alternar: si estaba en Idle (0), ir a StandingIdle (1) y viceversa
+      blend.targetWeight = blend.targetWeight < 0.5 ? 1 : 0;
+      // Próximo cambio entre 8-15 segundos
+      blend.nextChangeAt = elapsed + 8 + Math.random() * 7;
+    }
+
+    // Smoothing muy suave para que el blend sea imperceptible
+    blend.currentWeight = expSmoothing(blend.currentWeight, blend.targetWeight, dt, 1.5);
+
+    if (actions?.Idle) actions.Idle.setEffectiveWeight(1 - blend.currentWeight);
+    if (actions?.StandingIdle) actions.StandingIdle.setEffectiveWeight(blend.currentWeight);
+
+    // ——— Parpadeo natural (escala Y de los ojos) ———
+    const blink = blinkRef.current;
+    if (blink.phase === "idle" && elapsed >= blink.nextBlinkAt) {
+      blink.phase = "closing";
+      blink.progress = 0;
+      blink.doubleAt = Math.random() < 0.2 ? elapsed + 0.25 : null;
+    }
+
+    if (blink.phase === "closing") {
+      blink.progress += dt / blink.closeDuration;
+      if (blink.progress >= 1) {
+        blink.progress = 1;
+        blink.phase = "opening";
+      }
+    } else if (blink.phase === "opening") {
+      blink.progress -= dt / blink.openDuration;
+      if (blink.progress <= 0) {
+        blink.progress = 0;
+        blink.phase = "idle";
+        if (blink.doubleAt && elapsed < blink.doubleAt + 0.3) {
+          blink.nextBlinkAt = elapsed + 0.15;
+          blink.doubleAt = null;
+        } else {
+          blink.nextBlinkAt = elapsed + 2 + Math.random() * 4;
+        }
+      }
+    }
+
+    // Aplicar parpadeo via morph target eyesClosed
+    for (const entry of eyesClosedIndices) {
+      entry.influences[entry.index] = blink.progress;
+    }
+
+    // ——— Lipsync ———
     if (!headInfluences || !teethInfluences || !lipsync?.mouthCues?.length) return;
 
     const t = audio.currentTime;
