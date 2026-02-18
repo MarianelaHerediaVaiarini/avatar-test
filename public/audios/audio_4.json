@@ -1,0 +1,18 @@
+{
+  "metadata": {
+    "soundFile": "C:\\Users\\magui\\Documents\\preventor\\avatar-test\\public\\audios\\audio_4.ogg",
+    "duration": 1.61
+  },
+  "mouthCues": [
+    { "start": 0.00, "end": 0.18, "value": "X" },
+    { "start": 0.18, "end": 0.44, "value": "B" },
+    { "start": 0.44, "end": 0.51, "value": "F" },
+    { "start": 0.51, "end": 0.58, "value": "B" },
+    { "start": 0.58, "end": 0.65, "value": "C" },
+    { "start": 0.65, "end": 0.72, "value": "B" },
+    { "start": 0.72, "end": 0.79, "value": "F" },
+    { "start": 0.79, "end": 1.14, "value": "B" },
+    { "start": 1.14, "end": 1.35, "value": "F" },
+    { "start": 1.35, "end": 1.61, "value": "X" }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "metadata": {
+    "soundFile": "C:\\Users\\magui\\Documents\\preventor\\avatar-test\\public\\audios\\audio_1.ogg",
+    "duration": 5.04
+  },
+  "mouthCues": [
+    { "start": 0.00, "end": 0.18, "value": "X" },
+    { "start": 0.18, "end": 0.31, "value": "D" },
+    { "start": 0.31, "end": 0.45, "value": "C" },
+    { "start": 0.45, "end": 0.73, "value": "B" },
+    { "start": 0.73, "end": 0.80, "value": "C" },
+    { "start": 0.80, "end": 1.01, "value": "B" },
+    { "start": 1.01, "end": 1.15, "value": "C" },
+    { "start": 1.15, "end": 1.22, "value": "F" },
+    { "start": 1.22, "end": 1.30, "value": "A" },
+    { "start": 1.30, "end": 1.65, "value": "B" },
+    { "start": 1.65, "end": 1.79, "value": "C" },
+    { "start": 1.79, "end": 1.86, "value": "H" },
+    { "start": 1.86, "end": 1.99, "value": "X" },
+    { "start": 1.99, "end": 2.43, "value": "B" },
+    { "start": 2.43, "end": 2.53, "value": "A" },
+    { "start": 2.53, "end": 2.60, "value": "B" },
+    { "start": 2.60, "end": 2.66, "value": "C" },
+    { "start": 2.66, "end": 2.87, "value": "F" },
+    { "start": 2.87, "end": 3.01, "value": "B" },
+    { "start": 3.01, "end": 3.22, "value": "F" },
+    { "start": 3.22, "end": 3.29, "value": "B" },
+    { "start": 3.29, "end": 3.36, "value": "C" },
+    { "start": 3.36, "end": 3.43, "value": "G" },
+    { "start": 3.43, "end": 3.50, "value": "D" },
+    { "start": 3.50, "end": 3.57, "value": "B" },
+    { "start": 3.57, "end": 3.65, "value": "A" },
+    { "start": 3.65, "end": 3.73, "value": "C" },
+    { "start": 3.73, "end": 3.80, "value": "B" },
+    { "start": 3.80, "end": 3.88, "value": "A" },
+    { "start": 3.88, "end": 4.09, "value": "B" },
+    { "start": 4.09, "end": 4.16, "value": "C" },
+    { "start": 4.16, "end": 4.58, "value": "B" },
+    { "start": 4.58, "end": 4.79, "value": "C" },
+    { "start": 4.79, "end": 5.04, "value": "X" }
+  ]
+}
