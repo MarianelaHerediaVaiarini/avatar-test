@@ -1,19 +1,20 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useFrame, useGraph } from "@react-three/fiber";
-import { useAnimations, useFBX, useGLTF } from "@react-three/drei";
-import { SkeletonUtils } from "three-stdlib";
-import { useControls } from "leva";
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useFrame, useGraph } from '@react-three/fiber';
+import { useAnimations, useFBX, useGLTF } from '@react-three/drei';
+import { SkeletonUtils } from 'three-stdlib';
+import { useControls } from 'leva';
 
 const corresponding = {
-  X: "viseme_sil",
-  A: "viseme_aa",
-  B: "viseme_E",
-  C: "viseme_I",
-  D: "viseme_O",
-  E: "viseme_U",
-  F: "viseme_FF",
-  G: "viseme_nn",
-  H: "viseme_TH",
+  X: { viseme_sil: 1 },
+  A: { viseme_aa: 1 },
+  B: { viseme_PP: 0.8, viseme_aa: 0.2 },
+  C: { viseme_I: 0.6, viseme_E: 0.4 },
+  D: { viseme_O: 0.7, viseme_U: 0.3 },
+  E: { viseme_U: 1 },
+  F: { viseme_FF: 1 },
+  G: { viseme_nn: 0.7, viseme_DD: 0.3 },
+  H: { viseme_TH: 1 },
+  I: { viseme_I: 0.7, viseme_E: 0.3 },
 };
 
 const strength = {
@@ -26,10 +27,10 @@ const strength = {
   viseme_CH: 0.7,
   viseme_SS: 0.6,
   viseme_nn: 0.6,
-  viseme_RR: 0.6,
+  viseme_RR: 0.7,
   viseme_aa: 1.0,
-  viseme_E: 0.8,
-  viseme_I: 0.7,
+  viseme_E: 1.0,
+  viseme_I: 0.9,
   viseme_O: 0.9,
   viseme_U: 0.8,
 };
@@ -40,7 +41,7 @@ function expSmoothing(current, target, dt, k) {
 }
 
 export function Avatar(props) {
-  const { scene } = useGLTF("/models/69941ed6d4b48fd6efb1f2bc.glb");
+  const { scene } = useGLTF('/models/69941ed6d4b48fd6efb1f2bc.glb');
   const clone = useMemo(() => SkeletonUtils.clone(scene), [scene]);
   const { nodes, materials } = useGraph(clone);
 
@@ -49,8 +50,8 @@ export function Avatar(props) {
   const { playAudio, script } = useControls({
     playAudio: false,
     script: {
-      value: "audio_4",
-      options: ["audio_1", "audio_2", "audio_3", "audio_4"],
+      value: 'audio_4',
+      options: ['audio_1', 'audio_2', 'audio_3', 'audio_4'],
     },
   });
 
@@ -60,25 +61,31 @@ export function Avatar(props) {
   useEffect(() => {
     let cancelled = false;
     fetch(`/audios/${script}.json`)
-      .then((res) => res.json())
-      .then((data) => {
+      .then(res => res.json())
+      .then(data => {
         if (!cancelled) setLipsync(data);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [script]);
 
-  const { animations: standingGreetingAnimation } = useFBX("/animations/Standing Greeting.fbx");
-  const { animations: idleAnimation } = useFBX("/animations/Idle.fbx");
-  const { animations: standingIdleAnimation } = useFBX("/animations/Standing Idle.fbx");
+  const { animations: standingGreetingAnimation } = useFBX(
+    '/animations/Standing Greeting.fbx',
+  );
+  const { animations: idleAnimation } = useFBX('/animations/Idle.fbx');
+  const { animations: standingIdleAnimation } = useFBX(
+    '/animations/Standing Idle.fbx',
+  );
 
   // Memoize clips to keep useAnimations stable across renders
   const allAnimations = useMemo(() => {
     const idle = idleAnimation[0].clone();
     const greet = standingGreetingAnimation[0].clone();
     const standIdle = standingIdleAnimation[0].clone();
-    idle.name = "Idle";
-    greet.name = "StandingGreeting";
-    standIdle.name = "StandingIdle";
+    idle.name = 'Idle';
+    greet.name = 'StandingGreeting';
+    standIdle.name = 'StandingIdle';
     return [idle, greet, standIdle];
   }, [idleAnimation, standingGreetingAnimation, standingIdleAnimation]);
 
@@ -106,7 +113,7 @@ export function Avatar(props) {
   }, [actions]);
 
   const cueIndexRef = useRef(0);
-  const currentVisemeRef = useRef("viseme_sil");
+  const currentVisemeRef = useRef('viseme_sil');
 
   const headDict = nodes?.Wolf3D_Head?.morphTargetDictionary;
   const headInfluences = nodes?.Wolf3D_Head?.morphTargetInfluences;
@@ -115,15 +122,15 @@ export function Avatar(props) {
 
   const blinkRef = useRef({
     nextBlinkAt: 2 + Math.random() * 3,
-    phase: "idle",
+    phase: 'idle',
     progress: 0,
     closeDuration: 0.06,
-    openDuration: 0.10,
+    openDuration: 0.1,
   });
 
   const eyesClosedIndices = useMemo(() => {
     const result = [];
-    ["Wolf3D_Head", "EyeLeft", "EyeRight"].forEach((name) => {
+    ['Wolf3D_Head', 'EyeLeft', 'EyeRight'].forEach(name => {
       const mesh = nodes?.[name];
       if (mesh?.morphTargetDictionary?.eyesClosed !== undefined) {
         result.push({
@@ -135,7 +142,8 @@ export function Avatar(props) {
     return result;
   }, [nodes]);
 
-  const visemeNames = useMemo(() => Object.values(corresponding), []);
+  // Get all possible viseme names from strength (covers all morph targets)
+  const visemeNames = useMemo(() => Object.keys(strength), []);
   const visemeIndices = useMemo(() => {
     const map = {};
     for (const v of visemeNames) {
@@ -149,13 +157,15 @@ export function Avatar(props) {
 
   useEffect(() => {
     cueIndexRef.current = 0;
-    currentVisemeRef.current = "viseme_sil";
+    currentVisemeRef.current = 'viseme_sil';
     audio.currentTime = 0;
 
     if (playAudio) audio.play();
     else audio.pause();
 
-    return () => { audio.pause(); };
+    return () => {
+      audio.pause();
+    };
   }, [playAudio, script, audio]);
 
   useFrame((state, dt) => {
@@ -167,29 +177,35 @@ export function Avatar(props) {
       blend.targetWeight = blend.targetWeight < 0.5 ? 1 : 0;
       blend.nextChangeAt = elapsed + 8 + Math.random() * 7;
     }
-    blend.currentWeight = expSmoothing(blend.currentWeight, blend.targetWeight, dt, 1.5);
+    blend.currentWeight = expSmoothing(
+      blend.currentWeight,
+      blend.targetWeight,
+      dt,
+      1.5,
+    );
     if (actions?.Idle) actions.Idle.setEffectiveWeight(1 - blend.currentWeight);
-    if (actions?.StandingIdle) actions.StandingIdle.setEffectiveWeight(blend.currentWeight);
+    if (actions?.StandingIdle)
+      actions.StandingIdle.setEffectiveWeight(blend.currentWeight);
 
     // Blink
     const blink = blinkRef.current;
-    if (blink.phase === "idle" && elapsed >= blink.nextBlinkAt) {
-      blink.phase = "closing";
+    if (blink.phase === 'idle' && elapsed >= blink.nextBlinkAt) {
+      blink.phase = 'closing';
       blink.progress = 0;
       blink.doubleAt = Math.random() < 0.2 ? elapsed + 0.25 : null;
     }
 
-    if (blink.phase === "closing") {
+    if (blink.phase === 'closing') {
       blink.progress += dt / blink.closeDuration;
       if (blink.progress >= 1) {
         blink.progress = 1;
-        blink.phase = "opening";
+        blink.phase = 'opening';
       }
-    } else if (blink.phase === "opening") {
+    } else if (blink.phase === 'opening') {
       blink.progress -= dt / blink.openDuration;
       if (blink.progress <= 0) {
         blink.progress = 0;
-        blink.phase = "idle";
+        blink.phase = 'idle';
         if (blink.doubleAt && elapsed < blink.doubleAt + 0.3) {
           blink.nextBlinkAt = elapsed + 0.15;
           blink.doubleAt = null;
@@ -204,7 +220,8 @@ export function Avatar(props) {
     }
 
     // Lipsync
-    if (!headInfluences || !teethInfluences || !lipsync?.mouthCues?.length) return;
+    if (!headInfluences || !teethInfluences || !lipsync?.mouthCues?.length)
+      return;
 
     const t = audio.currentTime;
     let i = cueIndexRef.current;
@@ -215,44 +232,110 @@ export function Avatar(props) {
     cueIndexRef.current = i;
 
     const cue = cues[i];
-    const rhubarbKey = cue && t >= cue.start && t <= cue.end ? cue.value : "X";
-    const targetViseme = corresponding[rhubarbKey] ?? "viseme_sil";
-    currentVisemeRef.current = targetViseme;
+    const rhubarbKey = cue && t >= cue.start && t <= cue.end ? cue.value : 'X';
+    const visemeMix = corresponding[rhubarbKey] ?? { viseme_sil: 1 };
+    currentVisemeRef.current = visemeMix;
 
     const attack = 18;
     const release = 12;
 
     for (const v of visemeNames) {
-      const target = v === targetViseme ? (strength[v] ?? 1) : 0;
+      const mixWeight = visemeMix[v] ?? 0;
+      const target = mixWeight * (strength[v] ?? 1);
 
       const idxHead = visemeIndices[v]?.head;
       if (idxHead !== undefined) {
-        const k = target > headInfluences[idxHead] ? attack : release;
-        headInfluences[idxHead] = expSmoothing(headInfluences[idxHead], target, dt, k);
+        if (mixWeight > 0 || (headInfluences[idxHead] ?? 0) > 0.01) {
+          const k = target > headInfluences[idxHead] ? attack : release;
+          headInfluences[idxHead] = expSmoothing(
+            headInfluences[idxHead],
+            target,
+            dt,
+            k,
+          );
+        }
       }
 
       const idxTeeth = visemeIndices[v]?.teeth;
       if (idxTeeth !== undefined) {
-        const k = target > teethInfluences[idxTeeth] ? attack : release;
-        teethInfluences[idxTeeth] = expSmoothing(teethInfluences[idxTeeth], target, dt, k);
+        if (mixWeight > 0 || (teethInfluences[idxTeeth] ?? 0) > 0.01) {
+          const k = target > teethInfluences[idxTeeth] ? attack : release;
+          teethInfluences[idxTeeth] = expSmoothing(
+            teethInfluences[idxTeeth],
+            target,
+            dt,
+            k,
+          );
+        }
       }
     }
   });
 
   return (
-    <group {...props} dispose={null} ref={group}>
+    <group
+      {...props}
+      dispose={null}
+      ref={group}>
       <primitive object={nodes.Hips} />
-      <skinnedMesh geometry={nodes.Wolf3D_Hair.geometry} material={materials.Wolf3D_Hair} skeleton={nodes.Wolf3D_Hair.skeleton} />
-      <skinnedMesh geometry={nodes.Wolf3D_Body.geometry} material={materials.Wolf3D_Body} skeleton={nodes.Wolf3D_Body.skeleton} />
-      <skinnedMesh geometry={nodes.Wolf3D_Outfit_Bottom.geometry} material={materials.Wolf3D_Outfit_Bottom} skeleton={nodes.Wolf3D_Outfit_Bottom.skeleton} />
-      <skinnedMesh geometry={nodes.Wolf3D_Outfit_Footwear.geometry} material={materials.Wolf3D_Outfit_Footwear} skeleton={nodes.Wolf3D_Outfit_Footwear.skeleton} />
-      <skinnedMesh geometry={nodes.Wolf3D_Outfit_Top.geometry} material={materials.Wolf3D_Outfit_Top} skeleton={nodes.Wolf3D_Outfit_Top.skeleton} />
-      <skinnedMesh name="EyeLeft" geometry={nodes.EyeLeft.geometry} material={materials.Wolf3D_Eye} skeleton={nodes.EyeLeft.skeleton} morphTargetDictionary={nodes.EyeLeft.morphTargetDictionary} morphTargetInfluences={nodes.EyeLeft.morphTargetInfluences} />
-      <skinnedMesh name="EyeRight" geometry={nodes.EyeRight.geometry} material={materials.Wolf3D_Eye} skeleton={nodes.EyeRight.skeleton} morphTargetDictionary={nodes.EyeRight.morphTargetDictionary} morphTargetInfluences={nodes.EyeRight.morphTargetInfluences} />
-      <skinnedMesh name="Wolf3D_Head" geometry={nodes.Wolf3D_Head.geometry} material={materials.Wolf3D_Skin} skeleton={nodes.Wolf3D_Head.skeleton} morphTargetDictionary={nodes.Wolf3D_Head.morphTargetDictionary} morphTargetInfluences={nodes.Wolf3D_Head.morphTargetInfluences} />
-      <skinnedMesh name="Wolf3D_Teeth" geometry={nodes.Wolf3D_Teeth.geometry} material={materials.Wolf3D_Teeth} skeleton={nodes.Wolf3D_Teeth.skeleton} morphTargetDictionary={nodes.Wolf3D_Teeth.morphTargetDictionary} morphTargetInfluences={nodes.Wolf3D_Teeth.morphTargetInfluences} />
+      <skinnedMesh
+        geometry={nodes.Wolf3D_Hair.geometry}
+        material={materials.Wolf3D_Hair}
+        skeleton={nodes.Wolf3D_Hair.skeleton}
+      />
+      <skinnedMesh
+        geometry={nodes.Wolf3D_Body.geometry}
+        material={materials.Wolf3D_Body}
+        skeleton={nodes.Wolf3D_Body.skeleton}
+      />
+      <skinnedMesh
+        geometry={nodes.Wolf3D_Outfit_Bottom.geometry}
+        material={materials.Wolf3D_Outfit_Bottom}
+        skeleton={nodes.Wolf3D_Outfit_Bottom.skeleton}
+      />
+      <skinnedMesh
+        geometry={nodes.Wolf3D_Outfit_Footwear.geometry}
+        material={materials.Wolf3D_Outfit_Footwear}
+        skeleton={nodes.Wolf3D_Outfit_Footwear.skeleton}
+      />
+      <skinnedMesh
+        geometry={nodes.Wolf3D_Outfit_Top.geometry}
+        material={materials.Wolf3D_Outfit_Top}
+        skeleton={nodes.Wolf3D_Outfit_Top.skeleton}
+      />
+      <skinnedMesh
+        name="EyeLeft"
+        geometry={nodes.EyeLeft.geometry}
+        material={materials.Wolf3D_Eye}
+        skeleton={nodes.EyeLeft.skeleton}
+        morphTargetDictionary={nodes.EyeLeft.morphTargetDictionary}
+        morphTargetInfluences={nodes.EyeLeft.morphTargetInfluences}
+      />
+      <skinnedMesh
+        name="EyeRight"
+        geometry={nodes.EyeRight.geometry}
+        material={materials.Wolf3D_Eye}
+        skeleton={nodes.EyeRight.skeleton}
+        morphTargetDictionary={nodes.EyeRight.morphTargetDictionary}
+        morphTargetInfluences={nodes.EyeRight.morphTargetInfluences}
+      />
+      <skinnedMesh
+        name="Wolf3D_Head"
+        geometry={nodes.Wolf3D_Head.geometry}
+        material={materials.Wolf3D_Skin}
+        skeleton={nodes.Wolf3D_Head.skeleton}
+        morphTargetDictionary={nodes.Wolf3D_Head.morphTargetDictionary}
+        morphTargetInfluences={nodes.Wolf3D_Head.morphTargetInfluences}
+      />
+      <skinnedMesh
+        name="Wolf3D_Teeth"
+        geometry={nodes.Wolf3D_Teeth.geometry}
+        material={materials.Wolf3D_Teeth}
+        skeleton={nodes.Wolf3D_Teeth.skeleton}
+        morphTargetDictionary={nodes.Wolf3D_Teeth.morphTargetDictionary}
+        morphTargetInfluences={nodes.Wolf3D_Teeth.morphTargetInfluences}
+      />
     </group>
   );
 }
 
-useGLTF.preload("/models/69941ed6d4b48fd6efb1f2bc.glb");
+useGLTF.preload('/models/69941ed6d4b48fd6efb1f2bc.glb');
